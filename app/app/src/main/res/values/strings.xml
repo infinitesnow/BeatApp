@@ -1,0 +1,8 @@
+<resources>
+    <string name="app_name">CM</string>
+    <string name="no_calibration">No calibration yet.</string>
+    <string name="calibrate">Calibrate!</string>
+    <string name="calibrating">Calibrating…</string>
+    <string name="play">Play!</string>
+
+</resources>

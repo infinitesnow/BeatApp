@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<android.support.constraint.ConstraintLayout
+        xmlns:android="http://schemas.android.com/apk/res/android"
+        xmlns:tools="http://schemas.android.com/tools"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        tools:context=".MainActivity">
+    <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent">
+        <LinearLayout
+                android:orientation="vertical"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:layout_above="@+id/mse_textview"
+                android:gravity="center">
+
+            <Button
+                    android:text="@string/calibrate"
+                    android:layout_width="130dp"
+                    android:layout_height="60dp"
+                    android:id="@+id/calibrate_button"
+                    android:layout_gravity="center"
+            />
+            <Button
+                    android:text="@string/play"
+                    android:layout_width="130dp"
+                    android:layout_height="60dp"
+                    android:id="@+id/play_button"
+                    android:layout_gravity="center"
+            />
+        </LinearLayout>
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_alignParentBottom="true"
+                android:layout_marginVertical="15dp"
+                android:text="@string/no_calibration"
+                android:layout_gravity="center"
+                android:gravity="center"
+                android:id="@+id/mse_textview"/>
+    </RelativeLayout>
+</android.support.constraint.ConstraintLayout>
