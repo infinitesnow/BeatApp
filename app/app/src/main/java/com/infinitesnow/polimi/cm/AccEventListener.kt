@@ -9,7 +9,7 @@ import java.util.*
 class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calibrator) : SensorEventListener{
     val TAG = "AccListener"
 
-    val BUFFER_SIZE = 30
+    val BUFFER_SIZE = 10
 
     var valueList = LinkedList<FloatArray>()
     var timestampList = LinkedList<Long>()

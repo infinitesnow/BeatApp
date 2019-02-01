@@ -52,16 +52,30 @@ def playsoundThread():
                 ##mScheduler.enterabs((estimatedTime+1000)/1000, 0, lambda: playsound("sound_fx.wav"))
                 ##mScheduler.run()
 
-import matplotlib.pyplot as plt
-import numpy
 EVENT_PORT = 10001
-N_ELEMENTS = 30
+N_ELEMENTS = 10 
 ELEMENT_SIZE = (8+3*4) ### Bytes
 EVENT_PACKET_SIZE = N_ELEMENTS*ELEMENT_SIZE 
-PLOT_SIZE = 500
+PLOT_SIZE = 5000
+
+from pyqtgraph.Qt import QtGui, QtCore
+import pyqtgraph as pg
 
 def eventThread():
-    valuesList = [] 
+    app = QtGui.QApplication([])
+    win = pg.GraphicsWindow(title="Acceleration data")
+    pg.setConfigOptions(antialias=True)
+    p = win.addPlot(title="Realtime plot")
+    lineX = p.plot()
+    lineX.setData(pen='r')
+    lineY = p.plot()
+    lineY.setData(pen='g')
+    lineZ = p.plot()
+    lineZ.setData(pen='b')
+
+    x = []
+    y = []
+    z = []
     timestampList = [] 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((HOST, EVENT_PORT))
@@ -70,10 +84,6 @@ def eventThread():
         (conn, addr) = s.accept()
         with conn:
             print('Connected by', addr)
-            axis = plt.gca()
-            axis.set_autoscale_on(True)
-            lineX,lineY,lineZ = axis.plot([], [], [], [], [], [])
-            plt.ion()
             while True:
                 beginTime = currentTimeMillis()
                 inPacket = b'' 
@@ -90,28 +100,25 @@ def eventThread():
                     for i in range(0,N_ELEMENTS):
                         slice = inPacket[ELEMENT_SIZE*i:ELEMENT_SIZE*i+ELEMENT_SIZE]
                         #print("Slice {} has length {}".format(i,len(slice)))
-                        x, y, z, timestamp = struct.unpack(">fffq",slice)
-                        values = [x,y,z]
+                        newX, newY, newZ, timestamp = struct.unpack(">fffq",slice)
                         #print(str(values),str(timestamp))
-                        valuesList.extend(values) 
+                        x.append(newX)
+                        y.append(newY)
+                        z.append(newZ)
                         timestampList.append(timestamp)
                         #print("Lists are of size {},{}".format(len(valuesList),len(timestampList)))
-                    
-                    assert(3*len(timestampList)==len(valuesList))
-                    if len(timestampList)>PLOT_SIZE:
-                        timestampList = timestampList[-PLOT_SIZE:]
-                        valuesList = valuesList[-3*PLOT_SIZE:]
-                    lineX.set_xdata(timestampList)
-                    lineX.set_ydata(valuesList[0::3])
-                    lineY.set_xdata(timestampList)
-                    lineY.set_ydata(valuesList[1::3])
-                    lineZ.set_xdata(timestampList)
-                    lineZ.set_ydata(valuesList[2::3])
-                    axis.relim()
-                    axis.autoscale_view(True,True,True)
-                    plt.draw()
-                    plt.pause(0.001)
+                    assert(len(timestampList)==len(x))
+                    assert(len(timestampList)==len(y))
+                    assert(len(timestampList)==len(z))
+                    lineX.setData(timestampList[-PLOT_SIZE:],x[-PLOT_SIZE:])
+                    lineY.setData(timestampList[-PLOT_SIZE:],y[-PLOT_SIZE:])
+                    lineZ.setData(timestampList[-PLOT_SIZE:],z[-PLOT_SIZE:])
+                    p.setXRange(timestampList[-1]-PLOT_SIZE, timestampList[-1], padding=0)
+                    QtGui.QApplication.processEvents()    
+
+    pg.QtGui.QApplication.exec_()        
 
 ct = threading.Thread(target=calibrationThread)
 ct.start()
-eventThread()
+et = threading.Thread(target=eventThread())
+et.start()
