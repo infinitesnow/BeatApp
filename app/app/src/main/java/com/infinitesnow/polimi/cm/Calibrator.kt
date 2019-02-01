@@ -17,9 +17,9 @@ class Calibrator(val activity: MainActivity)
     val TAG = "Calibrator"
 
     val PACKET_SIZE = 16
-    val PORT = 10000
+    val CALIBRATION_PORT = 10000
     val SERVER_IP = "192.168.1.100"
-    val N_CALIBRATION_STEPS = 500
+    val N_CALIBRATION_STEPS = 100
     val OUTLIER_FILTER_COEFF = 1
     val DELTAT_ALPHA_0 = 1.0
     val DELTAT_ALPHA_BAR = 0.01
@@ -64,15 +64,15 @@ class Calibrator(val activity: MainActivity)
         deviceReceiveTimeList.add(deviceReceiveTime)
     }
 
-    fun calibrate()
-    {
+    fun calibrate(): Thread {
         deviceSendTimeList.add(-1)
         deviceReceiveTimeList.add(-1)
 
-        Thread {
+        val calibrationThread = Thread {
             val s: Socket
             try {
-                s = Socket(SERVER_IP, PORT)
+                Log.i(TAG, "Connecting calibration thread...")
+                s = Socket(SERVER_IP, CALIBRATION_PORT)
             } catch (e: IOException){
                 Log.e(TAG,"Server not available")
                 return@Thread
@@ -91,10 +91,12 @@ class Calibrator(val activity: MainActivity)
             s.close()
 
             computeMeanRTT()
-            Log.d(TAG, "Mean RTT: %.2f, %.2f".format(meanDeviceRTT,meanHostRTT))
             computeDeltaT()
-            activity.mseCallback(this.deltaT,this.mse)
-        }.start()
+            Log.d(TAG, "DeltaT: %.2f. Mean RTT: (%.2f, %.2f)".format(deltaT,meanDeviceRTT,meanHostRTT))
+            activity.calibrationCallback(this.deltaT,this.mse)
+        }
+        calibrationThread.start()
+        return calibrationThread
     }
     
     private fun computeDeltaT()

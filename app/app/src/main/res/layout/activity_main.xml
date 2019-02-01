@@ -22,13 +22,10 @@
                     android:id="@+id/calibrate_button"
                     android:layout_gravity="center"
             />
-            <Button
-                    android:text="@string/play"
-                    android:layout_width="130dp"
-                    android:layout_height="60dp"
-                    android:id="@+id/play_button"
-                    android:layout_gravity="center"
-            />
+            <TextView android:layout_width="match_parent"
+                      android:layout_height="wrap_content"
+                      android:id="@+id/acc_textview"
+                      android:gravity="center"/>
         </LinearLayout>
         <TextView
                 android:layout_width="match_parent"
