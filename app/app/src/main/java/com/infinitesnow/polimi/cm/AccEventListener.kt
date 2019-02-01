@@ -4,14 +4,15 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.util.Log
+import java.util.*
 
 class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calibrator) : SensorEventListener{
     val TAG = "AccListener"
 
-    val BUFFER_SIZE = 10
+    val BUFFER_SIZE = 30
 
-    var valueList = ArrayList<FloatArray>(0)
-    var timestampList = ArrayList<Long>(0)
+    var valueList = LinkedList<FloatArray>()
+    var timestampList = LinkedList<Long>()
 
     var lastPacketSentTime = System.currentTimeMillis()
 
@@ -24,22 +25,25 @@ class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calib
         }
 
         val v = e.values!!
-        val timestamp = (e.timestamp.toDouble()/1000000).toLong() + mCalibrator.deltaT.toLong()
-        val finalValueList : ArrayList<FloatArray>?
-        val finalTimestampList : ArrayList<Long>?
+        val timestamp = (e.timestamp.toDouble()/1000000).toLong()// + mCalibrator.deltaT.toLong()
+        val finalValueList : LinkedList<FloatArray>?
+        val finalTimestampList : LinkedList<Long>?
 
-        if (valueList.size >= BUFFER_SIZE && timestampList.size >= BUFFER_SIZE){
+        check(valueList.size==timestampList.size)
+        Log.i(TAG,"New value: %.3f,%.3f,%.3f".format(v[0],v[1],v[2]))
+
+        if (valueList.size >= BUFFER_SIZE){
             finalValueList = valueList
             finalTimestampList = timestampList
-            valueList = ArrayList(0)
-            timestampList = ArrayList(0)
+            valueList = LinkedList()
+            timestampList = LinkedList()
             val now = System.currentTimeMillis()
             Log.i(TAG, "Sending event after ${(now-lastPacketSentTime).toFloat()/1000} seconds...")
             lastPacketSentTime = now
             mEventHandler.sendEvent(finalValueList,finalTimestampList)
             Log.i(TAG,"Sent.")
         }
-        valueList.add(v)
+        valueList.add(v.clone())
         timestampList.add(timestamp)
     }
 }

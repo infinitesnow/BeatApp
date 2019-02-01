@@ -55,7 +55,7 @@ def playsoundThread():
 import matplotlib.pyplot as plt
 import numpy
 EVENT_PORT = 10001
-N_ELEMENTS = 10 
+N_ELEMENTS = 30
 ELEMENT_SIZE = (8+3*4) ### Bytes
 EVENT_PACKET_SIZE = N_ELEMENTS*ELEMENT_SIZE 
 PLOT_SIZE = 500
@@ -76,7 +76,10 @@ def eventThread():
             plt.ion()
             while True:
                 beginTime = currentTimeMillis()
-                inPacket = conn.recv(EVENT_PACKET_SIZE)
+                inPacket = b'' 
+                while (len(inPacket)<EVENT_PACKET_SIZE):
+                    inPacket += conn.recv(EVENT_PACKET_SIZE)
+                    #print("packet is "+str(len(inPacket))+" bytes long")
                 if (len(inPacket)==0): 
                     print("Client is done")
                     break
@@ -89,7 +92,7 @@ def eventThread():
                         #print("Slice {} has length {}".format(i,len(slice)))
                         x, y, z, timestamp = struct.unpack(">fffq",slice)
                         values = [x,y,z]
-                        print(str(values),str(timestamp))
+                        #print(str(values),str(timestamp))
                         valuesList.extend(values) 
                         timestampList.append(timestamp)
                         #print("Lists are of size {},{}".format(len(valuesList),len(timestampList)))
@@ -111,5 +114,4 @@ def eventThread():
 
 ct = threading.Thread(target=calibrationThread)
 ct.start()
-et = threading.Thread(target=eventThread)
-et.start()
+eventThread()

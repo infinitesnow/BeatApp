@@ -5,6 +5,7 @@ import java.io.IOException
 import java.io.OutputStream
 import java.net.Socket
 import java.nio.ByteBuffer
+import java.util.*
 
 class EventHandler(val mContext : MainActivity){
     private val TAG = "EventHandler"
@@ -48,7 +49,7 @@ class EventHandler(val mContext : MainActivity){
         }
     }*/
 
-    fun sendEvent(valuesList: ArrayList<FloatArray>, timestampList: ArrayList<Long>){
+    fun sendEvent(valuesList: List<FloatArray>, timestampList: List<Long>){
         if (mCalibrator!!.deltaT==0.0){
             Log.e(TAG,"Not calibrated")
             return
