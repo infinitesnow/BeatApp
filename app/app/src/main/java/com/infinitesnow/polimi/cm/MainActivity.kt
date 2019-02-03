@@ -3,9 +3,9 @@ package com.infinitesnow.polimi.cm
 import android.app.Activity
 import android.content.Context
 import android.hardware.Sensor
-import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.TextView
 
@@ -17,6 +17,17 @@ class MainActivity : Activity() {
     var mSensor : Sensor? = null
     var mAccEventListener : AccEventListener? = null
 
+    private var startstopButton: Button? = null
+    val stopOnClickListener = View.OnClickListener{
+        mEventHandler!!.stopFlag = true
+        startstopButton!!.setOnClickListener(null)
+    }
+    val startOnClickListener = View.OnClickListener{
+        mAccEventListener!!.init()
+        mEventHandler!!.connect()
+        mSensorManager!!.registerListener(mAccEventListener!!,mSensor!!,SensorManager.SENSOR_DELAY_GAME)
+        startstopButton!!.setOnClickListener(stopOnClickListener)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,23 +44,37 @@ class MainActivity : Activity() {
             findViewById<TextView>(R.id.calibrate_button).setText(R.string.calibrating)
             mCalibrator!!.calibrate()
         }
+        startstopButton = findViewById<Button>(R.id.startstop_button)
+        startstopButton!!.setOnClickListener(startOnClickListener)
     }
 
-    fun calibrationCallback(deltaT: Double, mse: Double){
-        val mseTextView = findViewById<TextView>(R.id.mse_textview)
-        mseTextView.post {
-            mseTextView.text = "Calibrated: %dms. MSE: %.2fms".format(deltaT.toLong(), mse)
-        }
+    fun calibrationCallback(done: Boolean, deltaT: Double, mse: Double){
         val calibrateButton = findViewById<TextView>(R.id.calibrate_button)
         calibrateButton.post{
             calibrateButton.setText(R.string.calibrate)
         }
-        mEventHandler!!.connect()
-        mSensorManager!!.registerListener(mAccEventListener!!,mSensor!!,SensorManager.SENSOR_DELAY_GAME)
+
+        val mseTextView = findViewById<TextView>(R.id.mse_textview)
+        if(done) {
+            calibrateButton.post {
+                calibrateButton.setBackgroundColor(this.getColor(R.color.green))
+            }
+            mseTextView.post {
+                mseTextView.text = getString(R.string.calibration_info).format(deltaT.toLong(), mse)
+            }
+        } else {
+            calibrateButton.post {
+                calibrateButton.setBackgroundColor(this.getColor(R.color.red))
+            }
+            mseTextView.post {
+                mseTextView.text = getString(R.string.calibration_failed).format(deltaT.toLong(), mse)
+            }
+        }
     }
 
-    fun detachSensorListener(){
+    fun stopCallback(){
         mSensorManager!!.unregisterListener(mAccEventListener!!)
+        startstopButton!!.setOnClickListener(startOnClickListener)
     }
 
 }

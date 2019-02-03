@@ -5,6 +5,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
+import java.net.SocketException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.*
@@ -28,10 +29,10 @@ class Calibrator(val activity: MainActivity)
 
     private var output : OutputStream? = null
 
-    private val deviceSendTimeList = LinkedList<Long>()
-    private val hostReceiveTimeList = LinkedList<Long>()
-    private val hostSendTimeList = LinkedList<Long>()
-    private val deviceReceiveTimeList = LinkedList<Long>()
+    private var deviceSendTimeList = LinkedList<Long>()
+    private var hostReceiveTimeList = LinkedList<Long>()
+    private var hostSendTimeList = LinkedList<Long>()
+    private var deviceReceiveTimeList = LinkedList<Long>()
 
     private var meanDeviceRTT = 0.0
     private var meanHostRTT = 0.0
@@ -39,6 +40,20 @@ class Calibrator(val activity: MainActivity)
     private var sigmaHostRTT = 0.0
     var deltaT = 0.0
     private var mse = 0.0
+
+    private fun init(){
+        deviceSendTimeList = LinkedList<Long>()
+        hostReceiveTimeList = LinkedList<Long>()
+        hostSendTimeList = LinkedList<Long>()
+        deviceReceiveTimeList = LinkedList<Long>()
+
+        meanDeviceRTT = 0.0
+        meanHostRTT = 0.0
+        sigmaDeviceRTT = 0.0
+        sigmaHostRTT = 0.0
+        deltaT = 0.0
+        mse = 0.0
+    }
 
     private fun calibrateStep(output: OutputStream, input: InputStream)
     {
@@ -65,6 +80,7 @@ class Calibrator(val activity: MainActivity)
     }
 
     fun calibrate(): Thread {
+        this.init()
         deviceSendTimeList.add(-1)
         deviceReceiveTimeList.add(-1)
 
@@ -74,14 +90,20 @@ class Calibrator(val activity: MainActivity)
                 Log.i(TAG, "Connecting calibration thread...")
                 s = Socket(SERVER_IP, CALIBRATION_PORT)
             } catch (e: IOException){
+                activity.calibrationCallback(false,0.0,0.0)
                 Log.e(TAG,"Server not available")
                 return@Thread
             }
 
             output = s.getOutputStream()
             val input = s.getInputStream()
-            for (i in 0 until N_CALIBRATION_STEPS+1)
-                calibrateStep(output!!,input)
+            try{
+                for (i in 0 until N_CALIBRATION_STEPS+1)
+                    calibrateStep(output!!,input)
+            } catch (e : SocketException){
+                Log.e(TAG,"Broken pipe!")
+                activity.calibrationCallback(false, 0.0,0.0)
+            }
 
             deviceSendTimeList.removeFirst()
             deviceReceiveTimeList.removeFirst()
@@ -92,8 +114,8 @@ class Calibrator(val activity: MainActivity)
 
             computeMeanRTT()
             computeDeltaT()
-            Log.d(TAG, "DeltaT: %.2f. Mean RTT: (%.2f, %.2f)".format(deltaT,meanDeviceRTT,meanHostRTT))
-            activity.calibrationCallback(this.deltaT,this.mse)
+            Log.i(TAG, "DeltaT: %.2f. Mean RTT: (%.2f, %.2f)".format(deltaT,meanDeviceRTT,meanHostRTT))
+            activity.calibrationCallback(true, this.deltaT,this.mse)
         }
         calibrationThread.start()
         return calibrationThread

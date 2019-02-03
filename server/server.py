@@ -10,42 +10,17 @@ import pyqtgraph as pg
 import numpy as np
 from scipy.signal import butter
 
-currentTimeMillis = lambda: int(round(time.time() * 1000))
-
-HOST = '192.168.1.100'
-CALIBRATION_PORT = 10000
-CALIBRATION_PACKET_SIZE = 16 
-
-def calibrationThread():    
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, CALIBRATION_PORT))
-    s.listen()
-    while True:
-        (conn, addr) = s.accept()
-        with conn:
-            print('Connected by', addr)
-            while True:
-                inPacket = conn.recv(CALIBRATION_PACKET_SIZE)
-                hostReceiveTime = currentTimeMillis()
-                if (len(inPacket)==0): 
-                    print("Client is done")
-                    break 
-                [deviceSendTime, deviceReceiveTime] = struct.unpack(">qq",inPacket)
-                hostSendTime = currentTimeMillis()
-                outPacket = struct.pack(">qq",hostReceiveTime,hostSendTime)
-                conn.sendall(outPacket)
-
 def playsoundThread():
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, EVENT_PORT))
+    s.bind((self.host, EVENT_PORT))
     s.listen()
     while True:
         (conn, addr) = s.accept()
         with conn:
             print('Connected by', addr)
             while True:
-                inPacket = conn.recv(EVENT_PACKET_SIZE)
-                receiveTime = currentTimeMillis()
+                inPacket = conn.recv(Main.EVENT_PACKET_SIZE)
+                receiveTime = Main.currentTimeMillis()
                 if (len(inPacket)==0): 
                     print("Client is done")
                     break
@@ -55,149 +30,244 @@ def playsoundThread():
                 ##mScheduler.enterabs((estimatedTime+1000)/1000, 0, lambda: playsound("sound_fx.wav"))
                 ##mScheduler.run()
 
-EVENT_PORT = 10001
-N_ELEMENTS = 3 
-ELEMENT_SIZE = (8+3*4) ### Bytes
-EVENT_PACKET_SIZE = N_ELEMENTS*ELEMENT_SIZE 
-PLOT_SIZE = 100
-SAMPLE_RATE = 50
-plotDuration = PLOT_SIZE*(1/SAMPLE_RATE)
-lowcutFreq = 0.5
-filterOrder = 5
-
-def bFilter(lowcutFreq, filterOrder=5):
-    nyquist = 0.5 * SAMPLE_RATE 
+def bFilter(lowcutFreq, fs, filterOrder=5):
+    nyquist = 0.5 * fs 
     lowcutFreqNorm = lowcutFreq / nyquist
     filterNum, filterDen = butter(filterOrder, [lowcutFreqNorm], btype='highpass')
     return filterNum, filterDen
 
-def filter(filterNum,filterDen,x,y):
-    order = len(filterNum)-1
-    assert(filterDen[0]==1)
-    xslice = x[-order-1:]
-    yslice = y[-order:]
-    b = filterNum[::-1]
-    a = filterDen[:0:-1]
-    return b.dot(xslice)-a.dot(yslice)
- 
-def eventThread():
-    app = QtGui.QApplication([])
-    win = pg.GraphicsWindow(title="Realtime plot")
-    p1 = win.addPlot(title="Acceleration")
-    pg.setConfigOptions(antialias=True)
-    lineAccX = p1.plot()
-    lineAccX.setData(pen='r')
-    lineAccY = p1.plot()
-    lineAccY.setData(pen='g')
-    lineAccZ = p1.plot()
-    lineAccZ.setData(pen='b')
-    p2 = win.addPlot(title="Velocity")
-    pg.setConfigOptions(antialias=True)
-    lineVelX = p2.plot()
-    lineVelX.setData(pen='r')
-    lineVelY = p2.plot()
-    lineVelY.setData(pen='g')
-    lineVelZ = p2.plot()
-    lineVelZ.setData(pen='b')
-    lineZC = p2.plot()
-    lineZC.setData(pen='y')
+class Main():
+    STATUS_OK = 0
+    STATUS_EXITED = 1
+    STATUS_INVALID = 2
+    STATUS_FINISHED = 3
+    
+    CALIBRATION_PORT = 10000
+    CALIBRATION_PACKET_SIZE = 16 
 
-    accX = [0]*filterOrder
-    accY = [0]*filterOrder
-    accZ = [0]*filterOrder
-    velX = [0]*filterOrder 
-    velY = [0]*filterOrder 
-    velZ = [0]*filterOrder 
-    filtVelX = [0]*filterOrder 
-    filtVelY = [0]*filterOrder 
-    filtVelZ = [0]*filterOrder 
-    timestampList = [0]*filterOrder
-    zc = [0]*filterOrder
-    filterNum, filterDen = bFilter(lowcutFreq,filterOrder)
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((HOST, EVENT_PORT))
-    s.listen()
-    while True:
-        (conn, addr) = s.accept()
-        with conn:
-            print('Connected by', addr)
-            beginTime = None
-            while True:
-                inPacket = b'' 
-                while (len(inPacket)<EVENT_PACKET_SIZE):
-                    inPacket += conn.recv(EVENT_PACKET_SIZE)
-                    if (not beginTime): 
-                        beginTime = currentTimeMillis()/1000
-                        print("BeginTime: {}".format(beginTime))
-                    #print("packet is "+str(len(inPacket))+" bytes long")
-                if (len(inPacket)==0): 
-                    print("Client is done")
-                    break
-                if len(inPacket)!=EVENT_PACKET_SIZE:
-                    print("Received invalid packet of size {} (size is {})".format(len(inPacket),EVENT_PACKET_SIZE))
-                    continue 
-                else:
-                    for i in range(0,N_ELEMENTS):
-                        slice = inPacket[ELEMENT_SIZE*i:ELEMENT_SIZE*i+ELEMENT_SIZE]
+    EVENT_PORT = 10001
+    N_ELEMENTS = 3 
+    ELEMENT_SIZE = (8+3*4) ### Bytes
+    EVENT_PACKET_SIZE = N_ELEMENTS*ELEMENT_SIZE 
 
-                        newAccX, newAccY, newAccZ, newTimestamp = struct.unpack(">fffq",slice)
-                        newTimestamp=newTimestamp/1000-beginTime
-                        accX.append(newAccX)
-                        accY.append(newAccY)
-                        accZ.append(newAccZ)
+    PLOT_SIZE = 100
 
-                        deltaT = newTimestamp-timestampList[-1]
+    SAMPLE_RATE = 50
+    LOWCUT_FREQ = 0.5
+    FILTER_ORDER = 5
+    
+    def currentTimeMillis():
+        return int(round(time.time() * 1000))
+    
+    def __init__(self,host):
+        self.host = host
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-                        newVelX = velX[-1]+newAccX*deltaT
-                        newVelY = velY[-1]+newAccY*deltaT
-                        newVelZ = velZ[-1]+newAccZ*deltaT
-                        velX.append(newVelX)
-                        velY.append(newVelY)
-                        velZ.append(newVelZ)
+        self.app = QtGui.QApplication([])
+        self.win = pg.GraphicsWindow(title="Realtime plot")
+        pg.setConfigOptions(antialias=True)
+        self.plotDuration = Main.PLOT_SIZE*(1/Main.SAMPLE_RATE)
 
-                        newFiltVelX = filter(filterNum,filterDen,velX,filtVelX)
-                        newFiltVelY = filter(filterNum,filterDen,velY,filtVelY)
-                        newFiltVelZ = filter(filterNum,filterDen,velZ,filtVelZ)
-                        filtVelX.append(newFiltVelX)
-                        filtVelY.append(newFiltVelY)
-                        filtVelZ.append(newFiltVelZ)
+        self.p1 = self.win.addPlot(title="Acceleration")
+        self.lineAccX = self.p1.plot()
+        self.lineAccY = self.p1.plot()
+        self.lineAccZ = self.p1.plot()
+        self.lineAccX.setData(pen='r')
+        self.lineAccY.setData(pen='g')
+        self.lineAccZ.setData(pen='b')
 
-                        if ((np.sign(filtVelY[-1])-np.sign(filtVelY[-2]))>1):
-                            zc[-1]=1
-                            zc.append(1)
-                        else:
-                            zc.append(0)
-                        timestampList.append(newTimestamp)
+        self.p2 = self.win.addPlot(title="Velocity")
+        self.lineVelX = self.p2.plot()
+        self.lineVelY = self.p2.plot()
+        self.lineVelZ = self.p2.plot()
+        self.lineVelX.setData(pen='r')
+        self.lineVelY.setData(pen='g')
+        self.lineVelZ.setData(pen='b')
 
-                    assert(len(timestampList)==len(accX))
-                    assert(len(timestampList)==len(accY))
-                    assert(len(timestampList)==len(accZ))
+        self.lineZC = self.p2.plot()
+        self.lineZC.setData(pen='y')
 
-                    timestampWindow = timestampList[-PLOT_SIZE:]
-                    windowZC = zc[-PLOT_SIZE:]
-                    lineZC.setData(timestampWindow,windowZC)
+        initSize = Main.FILTER_ORDER
+        self.accX = [0]*initSize
+        self.accY = [0]*initSize
+        self.accZ = [0]*initSize
+        self.velX = [0]*initSize 
+        self.velY = [0]*initSize 
+        self.velZ = [0]*initSize 
+        self.filtVelX = [0]*initSize 
+        self.filtVelY = [0]*initSize 
+        self.filtVelZ = [0]*initSize 
 
-                    windowAccX = accX[-PLOT_SIZE:]
-                    windowAccY = accY[-PLOT_SIZE:]
-                    windowAccZ = accZ[-PLOT_SIZE:]
-                    ###lineAccX.setData(timestampWindow,windowAccX)
-                    lineAccY.setData(timestampWindow,windowAccY)
-                    ###lineAccZ.setData(timestampWindow,windowAccZ)
-                    p1.setXRange(timestampList[-1]-plotDuration, timestampList[-1], padding=0)
+        self.timestampList = [0]*initSize
+        self.zc = [0]*initSize
 
-                    windowVelX = filtVelX[-PLOT_SIZE:]
-                    windowVelY = filtVelY[-PLOT_SIZE:]
-                    windowVelZ = filtVelZ[-PLOT_SIZE:]
-                    ###lineVelX.setData(timestampWindow,windowVelX)
-                    lineVelY.setData(timestampWindow,windowVelY)
-                    ###lineVelZ.setData(timestampWindow,windowVelZ)
-                    p2.setXRange(timestampList[-1]-plotDuration, timestampList[-1], padding=0)
+        self.filterNum, self.filterDen = bFilter(Main.LOWCUT_FREQ,Main.SAMPLE_RATE,Main.FILTER_ORDER)
 
-                    QtGui.QApplication.processEvents()    
+        self.beginTime = None
 
-    pg.QtGui.QApplication.exec_()        
+        self.calibrationThread = None
+        self.eventThread = None
 
-ct = threading.Thread(target=calibrationThread)
-ct.start()
-et = threading.Thread(target=eventThread())
-et.start()
+    def clearData(self):
+        initSize = Main.FILTER_ORDER
+        self.accX = [0]*initSize
+        self.accY = [0]*initSize
+        self.accZ = [0]*initSize
+        self.velX = [0]*initSize 
+        self.velY = [0]*initSize 
+        self.velZ = [0]*initSize 
+        self.filtVelX = [0]*initSize 
+        self.filtVelY = [0]*initSize 
+        self.filtVelZ = [0]*initSize 
+        self.timestampList = [0]*initSize
+        self.zc = [0]*initSize
+
+    def getFilterOutput(self,x,y):
+        order = self.FILTER_ORDER
+        assert(self.filterDen[0]==1)
+        xslice = x[-order-1:]
+        yslice = y[-order:]
+        b = self.filterNum[::-1]
+        a = self.filterDen[:0:-1]
+        return b.dot(xslice)-a.dot(yslice)
+    
+    def getEventPacket(conn):
+        inPacket = b'' 
+        while (len(inPacket)<Main.EVENT_PACKET_SIZE):
+            inPacket += conn.recv(Main.EVENT_PACKET_SIZE)
+            #print("packet is "+str(len(inPacket))+" bytes long")
+        return inPacket    
+
+    def checkPacket(inPacket):
+        if (len(inPacket)==0): 
+            print("Client is done")
+            return Main.STATUS_EXITED
+        elif len(inPacket)!=Main.EVENT_PACKET_SIZE:
+            print("Received invalid packet of size {} (size is {})".format(len(inPacket),Main.EVENT_PACKET_SIZE))
+            return Main.STATUS_INVALID 
+        else:
+            for i in range(0,Main.EVENT_PACKET_SIZE):
+                if (inPacket[i]!=255): 
+                    return Main.STATUS_OK
+            return Main.STATUS_FINISHED 
+    
+    def addSamples(self,packetSlice):
+       newAccX, newAccY, newAccZ, newTimestamp = struct.unpack(">fffq",packetSlice)
+       newTimestamp=newTimestamp/1000-self.beginTime
+       print("t: {}".format(newTimestamp))
+       self.accX.append(newAccX)
+       self.accY.append(newAccY)
+       self.accZ.append(newAccZ)
+    
+       deltaT = newTimestamp-self.timestampList[-1]
+    
+       newVelX = self.velX[-1]+newAccX*deltaT
+       newVelY = self.velY[-1]+newAccY*deltaT
+       newVelZ = self.velZ[-1]+newAccZ*deltaT
+       self.velX.append(newVelX)
+       self.velY.append(newVelY)
+       self.velZ.append(newVelZ)
+    
+       newFiltVelX = self.getFilterOutput(self.velX,self.filtVelX)
+       newFiltVelY = self.getFilterOutput(self.velY,self.filtVelY)
+       newFiltVelZ = self.getFilterOutput(self.velZ,self.filtVelZ)
+       self.filtVelX.append(newFiltVelX)
+       self.filtVelY.append(newFiltVelY)
+       self.filtVelZ.append(newFiltVelZ)
+    
+       if ((np.sign(self.filtVelY[-1])-np.sign(self.filtVelY[-2]))>1):
+           self.zc[-1]=1
+           self.zc.append(1)
+       else:
+           self.zc.append(0)
+       self.timestampList.append(newTimestamp)
+
+    def plot(self):
+        assert(len(self.timestampList)==len(self.accX))
+        assert(len(self.timestampList)==len(self.accY))
+        assert(len(self.timestampList)==len(self.accZ))
+        assert(len(self.timestampList)==len(self.velX))
+        assert(len(self.timestampList)==len(self.velY))
+        assert(len(self.timestampList)==len(self.velZ))
+        assert(len(self.timestampList)==len(self.zc))
+
+        T = Main.PLOT_SIZE
+        windowTimestamp = self.timestampList[-T:]
+        windowZC = self.zc[-T:]
+        self.lineZC.setData(windowTimestamp,windowZC)
+    
+        windowAccX = self.accX[-T:]
+        windowAccY = self.accY[-T:]
+        windowAccZ = self.accZ[-T:]
+        ###lineAccX.setData(windowTimestamp,windowAccX)
+        self.lineAccY.setData(windowTimestamp,windowAccY)
+        ###lineAccZ.setData(windowTimestamp,windowAccZ)
+        self.p1.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
+    
+        windowVelX = self.filtVelX[-T:]
+        windowVelY = self.filtVelY[-T:]
+        windowVelZ = self.filtVelZ[-T:]
+        ###lineVelX.setData(windowTimestamp,windowVelX)
+        self.lineVelY.setData(windowTimestamp,windowVelY)
+        ###lineVelZ.setData(windowTimestamp,windowVelZ)
+        self.p2.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
+
+    def eventLoopInnerFun(self,conn):
+        inPacket = Main.getEventPacket(conn)
+        status = Main.checkPacket(inPacket)
+        if(status!=Main.STATUS_OK):
+            return status 
+        for i in range(0,Main.N_ELEMENTS):
+            packetSlice = inPacket[Main.ELEMENT_SIZE*i:Main.ELEMENT_SIZE*i+Main.ELEMENT_SIZE]
+            self.addSamples(packetSlice)
+        self.plot()
+        QtGui.QApplication.processEvents()    
+        return Main.STATUS_OK
+
+    def eventThreadFun(self):
+        print("Starting event thread")
+        self.s.bind((self.host, Main.EVENT_PORT))
+        self.s.listen()
+        while True:
+            (conn, addr) = self.s.accept()
+            with conn:
+                print('Event thread connected by', addr)
+                self.clearData()
+                self.beginTime = Main.currentTimeMillis()/1000
+                print("Begin timestamp: {}".format(self.beginTime))
+                while (True):
+                    status = self.eventLoopInnerFun(conn)
+                    if (status == Main.STATUS_FINISHED):
+                        print("YEE-HAW")
+                        break
+
+    def calibrationThreadFun(self):    
+        print("Starting calibration thread")
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((self.host, Main.CALIBRATION_PORT))
+        s.listen()
+        while True:
+            (conn, addr) = s.accept()
+            with conn:
+                print('Calibration thread connected by', addr)
+                while True:
+                    inPacket = conn.recv(Main.CALIBRATION_PACKET_SIZE)
+                    hostReceiveTime = Main.currentTimeMillis()
+                    if (len(inPacket)==0): 
+                        print("Client is done calibrating")
+                        break 
+                    [deviceSendTime, deviceReceiveTime] = struct.unpack(">qq",inPacket)
+                    hostSendTime = Main.currentTimeMillis()
+                    outPacket = struct.pack(">qq",hostReceiveTime,hostSendTime)
+                    conn.sendall(outPacket)
+
+    def start(self):
+        print("Starting server.")
+        self.calibrationThread = threading.Thread(target=self.calibrationThreadFun)
+        self.calibrationThread.start()
+        self.eventThread = threading.Thread(target=self.eventThreadFun)
+        self.eventThread.start()
+        pg.QtGui.QApplication.exec_()        
+
+if __name__ == "__main__":
+    Main('192.168.1.100').start()

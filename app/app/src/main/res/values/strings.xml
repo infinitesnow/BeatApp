@@ -3,4 +3,8 @@
     <string name="no_calibration">No calibration yet.</string>
     <string name="calibrate">Calibrate!</string>
     <string name="calibrating">Calibrating…</string>
+    <string name="calibration_info">Calibrated: %dms. MSE: %.2fms</string>
+    <string name="start">Start</string>
+    <string name="stop">Stop</string>
+    <string name="calibration_failed">Calibration failed!</string>
 </resources>

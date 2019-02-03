@@ -5,7 +5,6 @@ import java.io.IOException
 import java.io.OutputStream
 import java.net.Socket
 import java.nio.ByteBuffer
-import java.util.*
 
 class EventHandler(val mContext : MainActivity){
     private val TAG = "EventHandler"
@@ -15,6 +14,8 @@ class EventHandler(val mContext : MainActivity){
     private var output: OutputStream? = null
     private var connectThread: Thread? = null
     private var mCalibrator: Calibrator? = null
+
+    var stopFlag = false
 
     fun connect(){
         mCalibrator = mContext.mCalibrator
@@ -49,18 +50,42 @@ class EventHandler(val mContext : MainActivity){
         }
     }*/
 
+    fun sendPacket(outPacket: ByteArray){
+        Thread {
+            connectThread!!.join()
+            try {
+                Log.v(TAG, "Pushing data...")
+                output!!.write(outPacket)
+            } catch (e: IOException) {
+                Log.e(TAG, "Output stream not available")
+                mContext.stopCallback()
+                return@Thread
+            }
+        }.start()
+    }
+
     fun sendEvent(valuesList: List<FloatArray>, timestampList: List<Long>){
         if (mCalibrator!!.deltaT==0.0){
             Log.e(TAG,"Not calibrated")
             return
         }
-
         check(valuesList.size == timestampList.size)
-        val packetSize = valuesList.size
-        val outPacket = ByteArray(packetSize*(8+3*4))
+        val packetLength = valuesList.size
+        val packetSize = packetLength*(8+3*4)
+        val outPacket = ByteArray(packetSize)
 
         val packetBuffer = ByteBuffer.wrap(outPacket)
-        for (i in 0 until packetSize){
+        if (stopFlag==true){
+            stopFlag=false
+            Log.i(TAG,"Exiting...")
+            for (i in 0 until packetSize){
+                packetBuffer.put(0xFF.toByte())
+            }
+            sendPacket(outPacket)
+            mContext.stopCallback()
+            return
+        }
+        for (i in 0 until packetLength){
             val value = valuesList[i]
             packetBuffer.putFloat(value[0])
             packetBuffer.putFloat(value[1])
@@ -68,16 +93,6 @@ class EventHandler(val mContext : MainActivity){
             packetBuffer.putLong(timestampList[i])
         }
 
-        Thread {
-            connectThread!!.join()
-            try {
-                Log.i(TAG, "Pushing data...")
-                output!!.write(outPacket)
-            } catch (e: IOException) {
-                Log.e(TAG, "Output stream not available")
-                mContext.detachSensorListener()
-                return@Thread
-            }
-        }.start()
+        sendPacket(outPacket)
     }
 }
