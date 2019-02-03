@@ -13,7 +13,7 @@ import kotlin.math.exp
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-class Calibrator(val activity: MainActivity)
+class Calibrator(val mContext: MainActivity)
 {
     val TAG = "Calibrator"
 
@@ -40,6 +40,7 @@ class Calibrator(val activity: MainActivity)
     private var sigmaHostRTT = 0.0
     var deltaT = 0.0
     private var mse = 0.0
+    var calibrated = false
 
     private fun init(){
         deviceSendTimeList = LinkedList<Long>()
@@ -53,6 +54,7 @@ class Calibrator(val activity: MainActivity)
         sigmaHostRTT = 0.0
         deltaT = 0.0
         mse = 0.0
+        calibrated = false
     }
 
     private fun calibrateStep(output: OutputStream, input: InputStream)
@@ -90,7 +92,7 @@ class Calibrator(val activity: MainActivity)
                 Log.i(TAG, "Connecting calibration thread...")
                 s = Socket(SERVER_IP, CALIBRATION_PORT)
             } catch (e: IOException){
-                activity.calibrationCallback(false,0.0,0.0)
+                mContext.calibrationCallback(false,0.0,0.0)
                 Log.e(TAG,"Server not available")
                 return@Thread
             }
@@ -102,7 +104,7 @@ class Calibrator(val activity: MainActivity)
                     calibrateStep(output!!,input)
             } catch (e : SocketException){
                 Log.e(TAG,"Broken pipe!")
-                activity.calibrationCallback(false, 0.0,0.0)
+                mContext.calibrationCallback(false, 0.0,0.0)
             }
 
             deviceSendTimeList.removeFirst()
@@ -115,7 +117,8 @@ class Calibrator(val activity: MainActivity)
             computeMeanRTT()
             computeDeltaT()
             Log.i(TAG, "DeltaT: %.2f. Mean RTT: (%.2f, %.2f)".format(deltaT,meanDeviceRTT,meanHostRTT))
-            activity.calibrationCallback(true, this.deltaT,this.mse)
+            calibrated = true
+            mContext.calibrationCallback(true, this.deltaT,this.mse)
         }
         calibrationThread.start()
         return calibrationThread

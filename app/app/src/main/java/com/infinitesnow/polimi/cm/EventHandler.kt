@@ -1,5 +1,6 @@
 package com.infinitesnow.polimi.cm
 
+import android.media.midi.MidiOutputPort
 import android.util.Log
 import java.io.IOException
 import java.io.OutputStream
@@ -8,56 +9,104 @@ import java.nio.ByteBuffer
 
 class EventHandler(val mContext : MainActivity){
     private val TAG = "EventHandler"
-    private val PORT = 10001
     private val SERVER_IP = "192.168.1.100"
+    private val EVENT_PORT = 10001
+    private val PLAY_PORT = 10002
+    private val PLAY_DELAY = 3000L
 
-    private var output: OutputStream? = null
+    private var eventOutput: OutputStream? = null
+    private var playOutput: OutputStream? = null
     private var connectThread: Thread? = null
     private var mCalibrator: Calibrator? = null
 
     var stopFlag = false
+    var connected = false
 
     fun connect(){
         mCalibrator = mContext.mCalibrator
         connectThread = Thread {
-            Log.i(TAG, "Connecting event thread...")
-            val s: Socket
+            Log.d(TAG, "Connecting event and play thread...")
+            val es: Socket
+            val ps: Socket
             try {
-                s = Socket(SERVER_IP, PORT)
-                output = s.getOutputStream()
+                es = Socket(SERVER_IP, EVENT_PORT)
+                ps = Socket(SERVER_IP, PLAY_PORT)
+                eventOutput = es.getOutputStream()
+                Log.i(TAG, "Play thread connected")
+                playOutput = ps.getOutputStream()
+                Log.i(TAG, "Event thread connected")
+                connected = true
             } catch (e: IOException){
                 Log.e(TAG,"Server not available")
+                mContext.stopCallback()
                 return@Thread
             }
         }
         connectThread!!.start()
     }
 
-    /*val playSound = Thread {
-        connectThread!!.join()
-        var mp = MediaPlayer.create(activity.applicationContext, R.raw.sound_fx)
-        try {
-            val outPacket = ByteArray(PACKET_SIZE)
-            val packetBuffer = ByteBuffer.wrap(outPacket)
-            val deviceScheduledTime = System.currentTimeMillis()
-            //Timer().schedule( timerTask{mp.start()}, Date(deviceScheduledTime + 1000))
-            val hostScheduledTime = deviceScheduledTime + deltaT.toLong()
-            packetBuffer.putLong(hostScheduledTime)
-            output!!.write(outPacket)
-        } catch (e: IOException){
-            Log.e(TAG,"Output stream not available")
-            return@Thread
+    fun play(){
+        if (!mCalibrator!!.calibrated){
+            Log.e(TAG,"Not calibrated")
+            return
         }
-    }*/
+        val outPacket = ByteArray(8)
+        val packetBuffer = ByteBuffer.wrap(outPacket)
+        val curTime = System.currentTimeMillis()
+        val playTime = curTime+PLAY_DELAY+mCalibrator!!.deltaT.toLong()
+        packetBuffer.putLong(playTime)
+        sendPlayPacket(outPacket)
+    }
 
-    fun sendPacket(outPacket: ByteArray){
+    fun stop(eventPacketLength : Int){
+        stopFlag=false
+        val stopEventPacket = ByteArray(eventPacketLength)
+        val stopEventBuffer = ByteBuffer.wrap(stopEventPacket)
+        Log.i(TAG,"Exiting...")
+        for (i in 0 until eventPacketLength){
+            stopEventBuffer.put(0xFF.toByte())
+        }
+        sendEventPacket(stopEventPacket)
+        val stopPlayPacket = byteArrayOf(0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),
+            0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),0xFF.toByte())
+        sendPlayPacket(stopPlayPacket)
+
+
+        mContext.stopCallback()
+    }
+
+    fun sendPlayPacket(outPacket: ByteArray){
         Thread {
             connectThread!!.join()
+            if(!connected) {
+                Log.e(TAG,"Not connected, not sending")
+                return@Thread
+            }
             try {
                 Log.v(TAG, "Pushing data...")
-                output!!.write(outPacket)
+                playOutput!!.write(outPacket)
             } catch (e: IOException) {
                 Log.e(TAG, "Output stream not available")
+                connected = false
+                mContext.stopCallback()
+                return@Thread
+            }
+        }.start()
+    }
+
+    fun sendEventPacket(outPacket: ByteArray){
+        Thread {
+            connectThread!!.join()
+            if(!connected) {
+                Log.e(TAG,"Not connected, not sending")
+                return@Thread
+            }
+            try {
+                Log.v(TAG, "Pushing data...")
+                eventOutput!!.write(outPacket)
+            } catch (e: IOException) {
+                Log.e(TAG, "Output stream not available")
+                connected = false
                 mContext.stopCallback()
                 return@Thread
             }
@@ -65,7 +114,7 @@ class EventHandler(val mContext : MainActivity){
     }
 
     fun sendEvent(valuesList: List<FloatArray>, timestampList: List<Long>){
-        if (mCalibrator!!.deltaT==0.0){
+        if (!mCalibrator!!.calibrated){
             Log.e(TAG,"Not calibrated")
             return
         }
@@ -76,13 +125,7 @@ class EventHandler(val mContext : MainActivity){
 
         val packetBuffer = ByteBuffer.wrap(outPacket)
         if (stopFlag==true){
-            stopFlag=false
-            Log.i(TAG,"Exiting...")
-            for (i in 0 until packetSize){
-                packetBuffer.put(0xFF.toByte())
-            }
-            sendPacket(outPacket)
-            mContext.stopCallback()
+            stop(packetSize)
             return
         }
         for (i in 0 until packetLength){
@@ -93,6 +136,6 @@ class EventHandler(val mContext : MainActivity){
             packetBuffer.putLong(timestampList[i])
         }
 
-        sendPacket(outPacket)
+        sendEventPacket(outPacket)
     }
 }

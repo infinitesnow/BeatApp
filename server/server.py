@@ -4,31 +4,13 @@ import struct
 import time
 import threading
 import sched
-from playsound import playsound
 from pyqtgraph.Qt import QtGui, QtCore
 import pyqtgraph as pg
 import numpy as np
 from scipy.signal import butter
-
-def playsoundThread():
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.bind((self.host, EVENT_PORT))
-    s.listen()
-    while True:
-        (conn, addr) = s.accept()
-        with conn:
-            print('Connected by', addr)
-            while True:
-                inPacket = conn.recv(Main.EVENT_PACKET_SIZE)
-                receiveTime = Main.currentTimeMillis()
-                if (len(inPacket)==0): 
-                    print("Client is done")
-                    break
-                [estimatedTime] = struct.unpack(">q",inPacket)
-                print("Error: {}".format(receiveTime-estimatedTime))
-                ##mScheduler = sched.scheduler(timefunc=time.time)
-                ##mScheduler.enterabs((estimatedTime+1000)/1000, 0, lambda: playsound("sound_fx.wav"))
-                ##mScheduler.run()
+import pickle as p
+import subprocess
+import json
 
 def bFilter(lowcutFreq, fs, filterOrder=5):
     nyquist = 0.5 * fs 
@@ -55,6 +37,8 @@ class Main():
     SAMPLE_RATE = 50
     LOWCUT_FREQ = 0.5
     FILTER_ORDER = 5
+
+    PLAY_PORT = 10002
     
     def currentTimeMillis():
         return int(round(time.time() * 1000))
@@ -100,6 +84,7 @@ class Main():
 
         self.timestampList = [0]*initSize
         self.zc = [0]*initSize
+        self.zcEvents = list()
 
         self.filterNum, self.filterDen = bFilter(Main.LOWCUT_FREQ,Main.SAMPLE_RATE,Main.FILTER_ORDER)
 
@@ -107,6 +92,8 @@ class Main():
 
         self.calibrationThread = None
         self.eventThread = None
+        self.playThread = None
+        self.playProcess = None
 
     def clearData(self):
         initSize = Main.FILTER_ORDER
@@ -154,7 +141,7 @@ class Main():
     def addSamples(self,packetSlice):
        newAccX, newAccY, newAccZ, newTimestamp = struct.unpack(">fffq",packetSlice)
        newTimestamp=newTimestamp/1000-self.beginTime
-       print("t: {}".format(newTimestamp))
+       ###print("t: {}".format(newTimestamp))
        self.accX.append(newAccX)
        self.accY.append(newAccY)
        self.accZ.append(newAccZ)
@@ -176,6 +163,8 @@ class Main():
        self.filtVelZ.append(newFiltVelZ)
     
        if ((np.sign(self.filtVelY[-1])-np.sign(self.filtVelY[-2]))>1):
+           eventTimestamp = (newTimestamp+self.timestampList[-1])/2
+           self.zcEvents.append(eventTimestamp)
            self.zc[-1]=1
            self.zc.append(1)
        else:
@@ -224,6 +213,15 @@ class Main():
         QtGui.QApplication.processEvents()    
         return Main.STATUS_OK
 
+    def computeScore(self):
+        with open("song.json") as f:
+            songData = json.load(f)
+        
+        beatsData = songData['annotations'][0]['data']
+        beats = list()
+        for beat in beatsData:
+            beats.append(beat['time'])
+
     def eventThreadFun(self):
         print("Starting event thread")
         self.s.bind((self.host, Main.EVENT_PORT))
@@ -238,8 +236,10 @@ class Main():
                 while (True):
                     status = self.eventLoopInnerFun(conn)
                     if (status == Main.STATUS_FINISHED):
-                        print("YEE-HAW")
-                        break
+                        print("Acquisition finished!")
+                        with open("accdata.p","wb") as f:
+                            p.dump(self.zcEvents,f)
+                        continue    
 
     def calibrationThreadFun(self):    
         print("Starting calibration thread")
@@ -260,6 +260,37 @@ class Main():
                     hostSendTime = Main.currentTimeMillis()
                     outPacket = struct.pack(">qq",hostReceiveTime,hostSendTime)
                     conn.sendall(outPacket)
+    
+    def startPlayProcess(self):
+        self.playProcess = subprocess.Popen(['cvlc','','song.wav'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL )
+
+    def playSong(self,playTime):
+        playTime/=1000
+        print("Playing at time ",playTime-self.beginTime)
+        mScheduler = sched.scheduler(timefunc=time.time)
+        mScheduler.enterabs(playTime, 0, self.startPlayProcess)
+        mScheduler.run()
+
+    def playThreadFun(self):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.bind((self.host, Main.PLAY_PORT))
+        s.listen()
+        while True:
+            (conn, addr) = s.accept()
+            with conn:
+                print('Audio player connected by ', addr)
+                while True:
+                    inPacket = conn.recv(Main.EVENT_PACKET_SIZE)
+                    if (list(inPacket) == [255]*8):
+                        print("Stopping song")
+                        self.playProcess.kill()
+                        continue
+                    [playTime] = struct.unpack(">q",inPacket)
+                    receiveTime = Main.currentTimeMillis()
+                    if (len(inPacket)==0): 
+                        print("Client disconnected from audio player")
+                        break
+                    self.playSong(playTime)
 
     def start(self):
         print("Starting server.")
@@ -267,6 +298,8 @@ class Main():
         self.calibrationThread.start()
         self.eventThread = threading.Thread(target=self.eventThreadFun)
         self.eventThread.start()
+        self.playThread = threading.Thread(target=self.playThreadFun)
+        self.playThread.start()
         pg.QtGui.QApplication.exec_()        
 
 if __name__ == "__main__":

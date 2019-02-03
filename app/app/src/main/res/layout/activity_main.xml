@@ -23,7 +23,7 @@
                     android:layout_gravity="center"
             />
             <Button
-                    android:text="@string/stop"
+                    android:text="@string/start"
                     android:layout_width="130dp"
                     android:layout_height="60dp"
                     android:id="@+id/startstop_button"

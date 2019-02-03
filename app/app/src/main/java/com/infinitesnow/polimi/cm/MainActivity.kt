@@ -26,7 +26,9 @@ class MainActivity : Activity() {
         mAccEventListener!!.init()
         mEventHandler!!.connect()
         mSensorManager!!.registerListener(mAccEventListener!!,mSensor!!,SensorManager.SENSOR_DELAY_GAME)
+        mEventHandler!!.play()
         startstopButton!!.setOnClickListener(stopOnClickListener)
+        startstopButton!!.text = getString(R.string.stop)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,14 +59,14 @@ class MainActivity : Activity() {
         val mseTextView = findViewById<TextView>(R.id.mse_textview)
         if(done) {
             calibrateButton.post {
-                calibrateButton.setBackgroundColor(this.getColor(R.color.green))
+                calibrateButton.backgroundTintList = this.getColorStateList(R.color.green)
             }
             mseTextView.post {
                 mseTextView.text = getString(R.string.calibration_info).format(deltaT.toLong(), mse)
             }
         } else {
             calibrateButton.post {
-                calibrateButton.setBackgroundColor(this.getColor(R.color.red))
+                calibrateButton.backgroundTintList = this.getColorStateList(R.color.red)
             }
             mseTextView.post {
                 mseTextView.text = getString(R.string.calibration_failed).format(deltaT.toLong(), mse)
@@ -72,9 +74,13 @@ class MainActivity : Activity() {
         }
     }
 
-    fun stopCallback(){
+    fun stopCallback() {
         mSensorManager!!.unregisterListener(mAccEventListener!!)
-        startstopButton!!.setOnClickListener(startOnClickListener)
+        startstopButton!!.post {
+            startstopButton!!.text = getString(R.string.start)
+            startstopButton!!.setOnClickListener(startOnClickListener)
+        }
+
     }
 
 }

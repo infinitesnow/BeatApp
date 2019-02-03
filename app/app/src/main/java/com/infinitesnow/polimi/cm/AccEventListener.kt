@@ -25,11 +25,6 @@ class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calib
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     override fun onSensorChanged(e : SensorEvent) {
-        if (mCalibrator.deltaT==0.0){
-            Log.e(TAG,"Not calibrated")
-            return
-        }
-
         val v = e.values!!
         val timestamp = System.currentTimeMillis() + mCalibrator.deltaT.toLong()
         val finalValueList : LinkedList<FloatArray>?
