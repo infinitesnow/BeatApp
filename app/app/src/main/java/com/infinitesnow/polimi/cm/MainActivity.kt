@@ -45,7 +45,7 @@ class MainActivity : Activity() {
             calibrateButton.setText(R.string.calibrate)
         }
         mEventHandler!!.connect()
-        mSensorManager!!.registerListener(mAccEventListener!!,mSensor!!,SensorManager.SENSOR_DELAY_FASTEST)
+        mSensorManager!!.registerListener(mAccEventListener!!,mSensor!!,SensorManager.SENSOR_DELAY_GAME)
     }
 
     fun detachSensorListener(){

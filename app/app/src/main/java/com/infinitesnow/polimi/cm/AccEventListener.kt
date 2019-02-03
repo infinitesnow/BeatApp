@@ -9,7 +9,7 @@ import java.util.*
 class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calibrator) : SensorEventListener{
     val TAG = "AccListener"
 
-    val BUFFER_SIZE = 10
+    val BUFFER_SIZE = 3
 
     var valueList = LinkedList<FloatArray>()
     var timestampList = LinkedList<Long>()
@@ -25,7 +25,7 @@ class AccEventListener( val mEventHandler : EventHandler, val mCalibrator: Calib
         }
 
         val v = e.values!!
-        val timestamp = (e.timestamp.toDouble()/1000000).toLong()// + mCalibrator.deltaT.toLong()
+        val timestamp = System.currentTimeMillis() + /*((e.timestamp - System.nanoTime()) / 1000000) +*/ mCalibrator.deltaT.toLong()
         val finalValueList : LinkedList<FloatArray>?
         val finalTimestampList : LinkedList<Long>?
 
