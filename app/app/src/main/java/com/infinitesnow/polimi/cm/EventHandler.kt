@@ -21,8 +21,10 @@ class EventHandler(val mContext : MainActivity){
 
     var stopFlag = false
     var connected = false
+    var playing = false
 
     fun connect(){
+        if(connected) return
         mCalibrator = mContext.mCalibrator
         connectThread = Thread {
             Log.d(TAG, "Connecting event and play thread...")
@@ -48,6 +50,7 @@ class EventHandler(val mContext : MainActivity){
     fun play(){
         if (!mCalibrator!!.calibrated){
             Log.e(TAG,"Not calibrated")
+            mContext.stopCallback()
             return
         }
         val outPacket = ByteArray(8)
@@ -55,7 +58,7 @@ class EventHandler(val mContext : MainActivity){
         val curTime = System.currentTimeMillis()
         val playTime = curTime+PLAY_DELAY+mCalibrator!!.deltaT.toLong()
         packetBuffer.putLong(playTime)
-        sendPlayPacket(outPacket)
+        sendPlayPacket(outPacket, true)
     }
 
     fun stop(eventPacketLength : Int){
@@ -69,13 +72,12 @@ class EventHandler(val mContext : MainActivity){
         sendEventPacket(stopEventPacket)
         val stopPlayPacket = byteArrayOf(0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),
             0xFF.toByte(),0xFF.toByte(),0xFF.toByte(),0xFF.toByte())
-        sendPlayPacket(stopPlayPacket)
-
+        sendPlayPacket(stopPlayPacket,false)
 
         mContext.stopCallback()
     }
 
-    fun sendPlayPacket(outPacket: ByteArray){
+    fun sendPlayPacket(outPacket: ByteArray, value: Boolean){
         Thread {
             connectThread!!.join()
             if(!connected) {
@@ -83,8 +85,10 @@ class EventHandler(val mContext : MainActivity){
                 return@Thread
             }
             try {
-                Log.v(TAG, "Pushing data...")
+                Log.v(TAG, "Sending request...")
                 playOutput!!.write(outPacket)
+                Log.v(TAG, "Done.")
+                playing = value
             } catch (e: IOException) {
                 Log.e(TAG, "Output stream not available")
                 connected = false
@@ -99,6 +103,10 @@ class EventHandler(val mContext : MainActivity){
             connectThread!!.join()
             if(!connected) {
                 Log.e(TAG,"Not connected, not sending")
+                return@Thread
+            }
+            if(!playing) {
+                Log.e(TAG,"Not playing, not sending")
                 return@Thread
             }
             try {
@@ -116,6 +124,7 @@ class EventHandler(val mContext : MainActivity){
     fun sendEvent(valuesList: List<FloatArray>, timestampList: List<Long>){
         if (!mCalibrator!!.calibrated){
             Log.e(TAG,"Not calibrated")
+            mContext.stopCallback()
             return
         }
         check(valuesList.size == timestampList.size)
