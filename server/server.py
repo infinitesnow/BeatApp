@@ -5,6 +5,7 @@ import time
 import threading
 import sched
 from pyqtgraph.Qt import QtGui, QtCore
+import PyQt5.QtCore
 import pyqtgraph as pg
 import numpy as np
 from scipy.signal import butter
@@ -18,7 +19,7 @@ def bFilter(lowcutFreq, fs, filterOrder=5):
     filterNum, filterDen = butter(filterOrder, [lowcutFreqNorm], btype='highpass')
     return filterNum, filterDen
 
-class Main():
+class Main(QtCore.QObject):
     STATUS_OK = 0
     STATUS_EXITED = 1
     STATUS_INVALID = 2
@@ -28,7 +29,7 @@ class Main():
     CALIBRATION_PACKET_SIZE = 16 
 
     EVENT_PORT = 10001
-    EVENT_TIMEOUT = 600 
+    EVENT_TIMEOUT = 600
     N_ELEMENTS = 3 
     ELEMENT_SIZE = (8+3*4) ### Bytes
     EVENT_PACKET_SIZE = N_ELEMENTS*ELEMENT_SIZE 
@@ -42,12 +43,23 @@ class Main():
     PLAY_PORT = 10002
     PLAY_PACKET_SIZE = 8 
     PLAY_TIMEOUT = 600
+    SCORE_WINDOW_LENGTH = 5
     BEAT_GRID_SIZE = 0.03
+    WEIGHT_FUN_EXP = 1.5 
+    REPRODUCTION_DELAY = 0.05
+    VEL_MODULE_CHECK_THRESHOLD = 0.5
+    VEL_MODULE_CHECK_WINLENGTH = 5
+
+    SCORE_FONT_SIZE = 75
+
     
     def currentTimeMillis():
         return int(round(time.time() * 1000))
     
+    scoreSignal = QtCore.Signal(float,name="score")
+
     def __init__(self,host):
+        QtCore.QObject.__init__(self)
         self.host = host
         self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
@@ -56,13 +68,14 @@ class Main():
         pg.setConfigOptions(antialias=True)
         self.plotDuration = Main.PLOT_SIZE*(1/Main.SAMPLE_RATE)
 
-        self.p1 = self.win.addPlot(title="Acceleration")
-        self.lineAccX = self.p1.plot()
-        self.lineAccY = self.p1.plot()
-        self.lineAccZ = self.p1.plot()
-        self.lineAccX.setData(pen='r')
-        self.lineAccY.setData(pen='g')
-        self.lineAccZ.setData(pen='b')
+        self.p1 = self.win.addPlot()
+        self.scoreView = pg.TextItem("score", anchor=(0.5,0.5), border='w')
+        self.scoreView.setPos(0.5,0.5)
+        self.scoreView.setFont(pg.Qt.QtGui.QFont("Monospace", Main.SCORE_FONT_SIZE))
+        self.p1.hideAxis('left')
+        self.p1.hideAxis('bottom')
+        self.p1.addItem(self.scoreView, ignoreBounds=True) 
+        self.scoreSignal.connect(self.setScore)
 
         self.p2 = self.win.addPlot(title="Velocity")
         self.lineVelX = self.p2.plot()
@@ -171,7 +184,7 @@ class Main():
     
     def addSamples(self,packetSlice):
        newAccX, newAccY, newAccZ, newTimestamp = struct.unpack(">fffq",packetSlice)
-       newTimestamp=newTimestamp/1000-self.beginTime
+       newTimestamp=newTimestamp/1000-self.beginTime-Main.REPRODUCTION_DELAY
        ###print("t: {}".format(newTimestamp))
        self.accX.append(newAccX)
        self.accY.append(newAccY)
@@ -194,14 +207,17 @@ class Main():
        self.filtVelZ.append(newFiltVelZ)
     
        eventTimestamp = (newTimestamp+self.timestampList[-1])/2
-       if ((np.sign(self.filtVelY[-1])-np.sign(self.filtVelY[-2]))>1):
+       if ( (np.sign(self.filtVelY[-1])-np.sign(self.filtVelY[-2]))>1 and\
+            abs(sum(self.filtVelY[-Main.VEL_MODULE_CHECK_WINLENGTH:]))>Main.VEL_MODULE_CHECK_THRESHOLD):
            self.zcEvents.append(eventTimestamp)
            self.zc[-1]=1
            self.zc.append(1)
        else:
            self.zc.append(0)
        beatDistancesFromTimestamp = [ abs(eventTimestamp-self.playDelay-b) for b in self.beats ]
-       if (min(beatDistancesFromTimestamp)<Main.BEAT_GRID_SIZE): self.beatGrid.append(1)
+       
+       if (min(beatDistancesFromTimestamp)<Main.BEAT_GRID_SIZE):
+           self.beatGrid.append(1) 
        else: self.beatGrid.append(0)
 
        self.timestampList.append(newTimestamp)
@@ -222,14 +238,6 @@ class Main():
         windowBeat = self.beatGrid[-T:]
         self.lineBeat.setData(windowTimestamp,windowBeat)
     
-        windowAccX = self.accX[-T:]
-        windowAccY = self.accY[-T:]
-        windowAccZ = self.accZ[-T:]
-        ###lineAccX.setData(windowTimestamp,windowAccX)
-        self.lineAccY.setData(windowTimestamp,windowAccY)
-        ###lineAccZ.setData(windowTimestamp,windowAccZ)
-        self.p1.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
-    
         windowVelX = self.filtVelX[-T:]
         windowVelY = self.filtVelY[-T:]
         windowVelZ = self.filtVelZ[-T:]
@@ -238,35 +246,57 @@ class Main():
         ###lineVelZ.setData(windowTimestamp,windowVelZ)
         self.p2.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
 
+    @QtCore.pyqtSlot(float)
+    def setScore(self,val):
+        self.scoreView.setText("{0:.3f}".format(val))
+
+    def computeScore(self):
+        firstWindowTime = self.beats[Main.SCORE_WINDOW_LENGTH]
+        currentSongTime = Main.currentTimeMillis()/1000-self.beginTime-self.playDelay
+        if (currentSongTime<firstWindowTime): return
+        lastPlayedBeat = np.argmax([b for b in self.beats if b<currentSongTime])
+        windowBeats = self.beats[lastPlayedBeat-Main.SCORE_WINDOW_LENGTH:lastPlayedBeat+1]
+        windowStartTime = windowBeats[0]
+        shiftedEvents = [ e-self.playDelay for e in self.zcEvents ]
+        windowEvents = [e for e in shiftedEvents if e>windowStartTime]
+        if (len(windowEvents)==0): return
+        score=[]
+        for i in range(0,len(windowBeats)-1):
+            thisBeatStart = windowBeats[i]
+            thisBeatEnd = windowBeats[i+1]
+            thisBeatLength = thisBeatEnd-thisBeatStart
+            halfBeatLength = thisBeatLength/2
+            wf = lambda x: 1/(halfBeatLength**(Main.WEIGHT_FUN_EXP-1)) * (x**Main.WEIGHT_FUN_EXP)
+            distanceFromBeatStart = [wf(abs(e-thisBeatStart)) for e in windowEvents]
+            distanceFromBeatEnd = [wf(abs(e-thisBeatEnd)) for e in windowEvents]
+            score.append(max([ 10*(halfBeatLength - min([min(distanceFromBeatStart),min(distanceFromBeatEnd)]))/halfBeatLength ,0]))
+        score=np.average(score)    
+        self.scoreSignal.emit(score)
+        ###print("***** \033[31mSCORE: {}\033[0m *****".format(score))
+
     def eventLoopInnerFun(self,conn):
         inPacket = Main.getEventPacket(conn)
         status = Main.checkPacket(inPacket)
         if(status!=Main.STATUS_OK):
             return status 
-        if (self.beginTime is None):
+        if (self.beginTime is None or self.playDelay is None):
             print("Did not receive play packet yet, skipping")
             return Main.STATUS_OK
         for i in range(0,Main.N_ELEMENTS):
             packetSlice = inPacket[Main.ELEMENT_SIZE*i:Main.ELEMENT_SIZE*i+Main.ELEMENT_SIZE]
             self.addSamples(packetSlice)
+            self.computeScore()
         self.plot()
         QtGui.QApplication.processEvents()    
         return Main.STATUS_OK
-
-    def computeScore(self):
-        score = 0 
-        for e in self.zcEvents:
-            e = e-self.playDelay
-            if (e<0): continue
-            eventDistancesFromBeat = [ abs(e-b) for b in self.beats ]
-            score += min(eventDistancesFromBeat)
-        return score/len(self.zcEvents)
 
     def eventSessionLoop(self,conn):
        status = self.eventLoopInnerFun(conn)
        if (status == Main.STATUS_FINISHED):
            print("Acquisition finished!")
-           print("***** \033[31mSCORE: {}\033[0m *****".format(self.computeScore()))
+           ### print("***** \033[31mSCORE: {}\033[0m *****".format(self.computeScore()))
+           with open("data.p","wb") as f:
+               p.dump(self.zcEvents,f)
            self.clearData()
            return Main.STATUS_FINISHED 
        if (status == Main.STATUS_EXITED):
