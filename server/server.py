@@ -68,27 +68,30 @@ class Main(QtCore.QObject):
         pg.setConfigOptions(antialias=True)
         self.plotDuration = Main.PLOT_SIZE*(1/Main.SAMPLE_RATE)
 
-        self.p1 = self.win.addPlot()
+        self.scoreViewBox = pg.ViewBox() 
         self.scoreView = pg.TextItem("score", anchor=(0.5,0.5), border='w')
         self.scoreView.setPos(0.5,0.5)
         self.scoreView.setFont(pg.Qt.QtGui.QFont("Monospace", Main.SCORE_FONT_SIZE))
-        self.p1.hideAxis('left')
-        self.p1.hideAxis('bottom')
-        self.p1.addItem(self.scoreView, ignoreBounds=True) 
+        self.scoreViewBox.addItem(self.scoreView, ignoreBounds=True) 
         self.scoreSignal.connect(self.setScore)
 
-        self.p2 = self.win.addPlot(title="Velocity")
-        self.lineVelX = self.p2.plot()
-        self.lineVelY = self.p2.plot()
-        self.lineVelZ = self.p2.plot()
+        self.velPlot = pg.PlotItem() 
+        self.lineVelX = self.velPlot.plot()
+        self.lineVelY = self.velPlot.plot()
+        self.lineVelZ = self.velPlot.plot()
         self.lineVelX.setData(pen='r')
         self.lineVelY.setData(pen='g')
         self.lineVelZ.setData(pen='b')
-
-        self.lineZC = self.p2.plot()
+        self.lineZC = self.velPlot.plot()
         self.lineZC.setData(pen='y')
-        self.lineBeat = self.p2.plot()
+        self.lineBeat = self.velPlot.plot()
         self.lineBeat.setData(pen='w')
+
+        self.layout = pg.GraphicsLayout()
+        self.layout.addItem(self.scoreViewBox,0,0)
+        self.layout.addItem(self.velPlot,0,0)
+
+        self.win.addItem(self.layout)
 
         self.filterNum, self.filterDen = bFilter(Main.LOWCUT_FREQ,Main.SAMPLE_RATE,Main.FILTER_ORDER)
 
@@ -244,7 +247,7 @@ class Main(QtCore.QObject):
         ###lineVelX.setData(windowTimestamp,windowVelX)
         self.lineVelY.setData(windowTimestamp,windowVelY)
         ###lineVelZ.setData(windowTimestamp,windowVelZ)
-        self.p2.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
+        self.velPlot.setXRange(self.timestampList[-1]-self.plotDuration, self.timestampList[-1], padding=0)
 
     @QtCore.pyqtSlot(float)
     def setScore(self,val):
