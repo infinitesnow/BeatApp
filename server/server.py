@@ -45,7 +45,7 @@ class Main(QtCore.QObject):
     PLAY_TIMEOUT = 600
     SCORE_WINDOW_LENGTH = 5
     BEAT_GRID_SIZE = 0.03
-    WEIGHT_FUN_EXP = 1.5 
+    WEIGHT_FUN_EXP = 2.0 
     REPRODUCTION_DELAY = 0.05
     VEL_MODULE_CHECK_THRESHOLD = 0.5
     VEL_MODULE_CHECK_WINLENGTH = 5
@@ -150,7 +150,7 @@ class Main(QtCore.QObject):
         beatsData = songData['annotations'][0]['data']
         self.beats = list()
         for beat in beatsData:
-            self.beats.append(beat['time'])
+            self.beats.append(beat['time']-230)
 
     def getFilterOutput(self,x,y):
         order = self.FILTER_ORDER
